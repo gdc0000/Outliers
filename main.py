@@ -44,28 +44,28 @@ def filter_cases(df):
     Returns:
         pd.DataFrame: The filtered dataset.
     """
-    st.sidebar.header("🔍 Filter Cases")
+    st.header("🔍 Filter Cases")
 
-    st.sidebar.markdown("""
+    st.markdown("""
     ### Apply Filter Conditions
     Enter your filter conditions using pandas query syntax.
     - Use logical operators: `and`, `or`, `not`
     - Use comparison operators: `>`, `<`, `>=`, `<=`, `==`, `!=`
     - Enclose string values in quotes: `'value'` or `"value"`
-    
+
     **Examples:**
     - `AGE > 30`
     - `INCOME < 50000 and AGE >= 25`
     - `CITY == 'New York' or CITY == 'Los Angeles'`
     """)
 
-    filter_condition = st.sidebar.text_area(
+    filter_condition = st.text_area(
         "📋 Enter Filter Conditions",
         height=150,
         placeholder="e.g., AGE > 30 and INCOME < 50000"
     )
 
-    if st.sidebar.button("Apply Filter"):
+    if st.button("Apply Filter"):
         if filter_condition.strip() == "":
             st.warning("⚠️ Please enter at least one filter condition.")
             return df
@@ -94,34 +94,34 @@ def aggregate_scores(df):
     Returns:
         pd.DataFrame: Dataset with an additional 'Composite_Score' column.
     """
-    st.sidebar.header("🧮 Score Aggregation")
+    st.header("🧮 Score Aggregation")
     numeric_columns = df.select_dtypes(include=['number']).columns.tolist()
     if not numeric_columns:
-        st.sidebar.warning("⚠️ No numerical columns available for aggregation.")
+        st.warning("⚠️ No numerical columns available for aggregation.")
         return df
 
-    selected_columns = st.sidebar.multiselect(
+    selected_columns = st.multiselect(
         "📊 Select columns to aggregate into a score", 
         numeric_columns,
         default=numeric_columns[:2]  # Default selection
     )
     
     if selected_columns:
-        aggregation_method = st.sidebar.selectbox(
+        aggregation_method = st.selectbox(
             "🔧 Select aggregation method", 
             ["Sum", "Mean", "Weighted Sum"]
         )
         if aggregation_method == "Sum":
             df['Composite_Score'] = df[selected_columns].sum(axis=1)
-            st.sidebar.success("✅ Composite score (Sum) created successfully!")
+            st.success("✅ Composite score (Sum) created successfully!")
         elif aggregation_method == "Mean":
             df['Composite_Score'] = df[selected_columns].mean(axis=1)
-            st.sidebar.success("✅ Composite score (Mean) created successfully!")
+            st.success("✅ Composite score (Mean) created successfully!")
         elif aggregation_method == "Weighted Sum":
             weights = {}
-            st.sidebar.markdown("### ⚖️ Assign Weights")
+            st.markdown("### ⚖️ Assign Weights")
             for col in selected_columns:
-                weights[col] = st.sidebar.number_input(
+                weights[col] = st.number_input(
                     f"Weight for `{col}`", 
                     value=1.0, 
                     step=0.1,
@@ -129,11 +129,11 @@ def aggregate_scores(df):
                 )
             weights_series = pd.Series(weights)
             df['Composite_Score'] = df[selected_columns].mul(weights_series).sum(axis=1)
-            st.sidebar.success("✅ Composite score (Weighted Sum) created successfully!")
-        st.write("### 📈 Composite Score")
+            st.success("✅ Composite score (Weighted Sum) created successfully!")
+        st.write("### 📈 Composite Score Statistics")
         st.write(df[['Composite_Score']].describe())
     else:
-        st.sidebar.warning("⚠️ Please select at least one column to aggregate.")
+        st.warning("⚠️ Please select at least one column to aggregate.")
     return df
 
 def plot_monovariate_distribution(df):
@@ -258,11 +258,10 @@ def identify_outliers(df, test):
             db = DBSCAN(eps=eps, min_samples=min_samples)
             db.fit(scaled_data)
             labels = db.labels_
-            outliers = labels == -1
+            outliers_detected = labels == -1
             # Initialize a Series with all False
-            outliers_series = pd.Series(False, index=df.index)
-            outliers_series.loc[df[selected_columns].dropna().index] = outliers
-            outliers = outliers_series
+            outliers = pd.Series(False, index=df.index)
+            outliers.loc[df[selected_columns].dropna().index] = outliers_detected
         elif test == "Isolation Forest":
             contamination = st.sidebar.number_input(
                 "🧮 Isolation Forest Contamination",
@@ -274,11 +273,10 @@ def identify_outliers(df, test):
             iso_forest = IsolationForest(contamination=contamination, random_state=42)
             iso_forest.fit(df[selected_columns].dropna())
             preds = iso_forest.predict(df[selected_columns].dropna())
-            outliers = preds == -1
+            outliers_detected = preds == -1
             # Initialize a Series with all False
-            outliers_series = pd.Series(False, index=df.index)
-            outliers_series.loc[df[selected_columns].dropna().index] = outliers
-            outliers = outliers_series
+            outliers = pd.Series(False, index=df.index)
+            outliers.loc[df[selected_columns].dropna().index] = outliers_detected
 
         # Add the 'Outlier' column
         df['Outlier'] = outliers
@@ -338,7 +336,7 @@ def main():
     
     **Instructions:**
     1. **Upload** your dataset using the upload button.
-    2. **Filter** the data by entering your conditions in the sidebar.
+    2. **Filter** the data by entering your conditions in the filter section.
     3. **Aggregate** scores if needed.
     4. **Visualize** the data distributions.
     5. **Choose** a statistical test to detect outliers.
@@ -348,33 +346,39 @@ def main():
     # Step 1: Upload Dataset
     df = upload_dataset()
     if df is not None:
+        st.markdown("---")
         # Step 2: Filter Cases
         filtered_df = filter_cases(df)
         
+        st.markdown("---")
         # Step 3: Aggregate Scores
         aggregated_df = aggregate_scores(filtered_df)
         
+        st.markdown("---")
         # Step 4: Visualizations
+        st.header("📊 Data Visualization")
         col1, col2 = st.columns(2)
         with col1:
             plot_monovariate_distribution(aggregated_df)
         with col2:
             plot_multivariate_distribution(aggregated_df)
         
+        st.markdown("---")
         # Step 5: Choose Statistical Test
         selected_test = choose_statistical_test()
         
         # Step 6: Identify Outliers
         outlier_df = identify_outliers(aggregated_df, selected_test)
         
+        st.markdown("---")
         # Step 7: Download Enhanced Dataset
         download_enhanced_dataset(outlier_df)
         
+        st.markdown("---")
         # Optional: Display the enhanced dataset
         st.header("📂 Enhanced Dataset")
         st.dataframe(outlier_df)
-
-        # Optional: Provide summary statistics
+        
         st.subheader("📊 Dataset Statistics")
         st.write(outlier_df.describe())
 
