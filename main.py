@@ -12,6 +12,15 @@ from io import BytesIO
 # Set the seaborn style for better aesthetics
 sns.set_style("whitegrid")
 
+def add_footer():
+    st.markdown("---")
+    st.markdown("### **Gabriele Di Cicco, PhD in Social Psychology**")
+    st.markdown("""
+    [GitHub](https://github.com/gdc0000) | 
+    [ORCID](https://orcid.org/0000-0002-1439-5790) | 
+    [LinkedIn](https://www.linkedin.com/in/gabriele-di-cicco-124067b0/)
+    """)
+
 def upload_dataset():
     """
     Allows users to upload a dataset in CSV, Excel, or other supported formats.
@@ -93,9 +102,9 @@ def aggregate_scores(df):
         df (pd.DataFrame): The dataset to aggregate.
 
     Returns:
-        pd.DataFrame: Dataset with an additional 'Composite_Score' column.
+        pd.DataFrame: Dataset with aggregated score columns.
     """
-    st.header("🧮 **Score Aggregation**")
+    st.header("🧮 **Score Aggregation & Variable Transformation**")
     numeric_columns = df.select_dtypes(include=['number']).columns.tolist()
     if not numeric_columns:
         st.warning("⚠️ No numerical columns available for aggregation.")
@@ -113,16 +122,37 @@ def aggregate_scores(df):
             ["Sum", "Mean", "Weighted Sum"]
         )
         
-        submitted = st.form_submit_button("🧮 **Apply Aggregation**")
+        # For variable transformation
+        transformation = st.selectbox(
+            "🔄 **Select Variable Transformation**",
+            ["None", "Log Transformation", "Square Root Transformation", "Custom Expression"]
+        )
+        
+        custom_expression = ""
+        if transformation == "Custom Expression":
+            custom_expression = st.text_input(
+                "✏️ **Enter Custom Expression**",
+                help="Use pandas syntax. Example: `df['New_Column'] = df['A'] / df['B']`"
+            )
+        
+        submitted = st.form_submit_button("🧮 **Apply Aggregation & Transformation**")
         
         if submitted:
+            # Aggregation
             if selected_columns:
                 if aggregation_method == "Sum":
-                    df['Composite_Score'] = df[selected_columns].sum(axis=1)
-                    st.success("✅ Composite score (Sum) created successfully!")
+                    new_column_name = "Composite_Score_Sum"
+                    # Ensure unique column name
+                    if new_column_name in df.columns:
+                        new_column_name += "_1"
+                    df[new_column_name] = df[selected_columns].sum(axis=1)
+                    st.success(f"✅ Aggregated score (Sum) created as `{new_column_name}`.")
                 elif aggregation_method == "Mean":
-                    df['Composite_Score'] = df[selected_columns].mean(axis=1)
-                    st.success("✅ Composite score (Mean) created successfully!")
+                    new_column_name = "Composite_Score_Mean"
+                    if new_column_name in df.columns:
+                        new_column_name += "_1"
+                    df[new_column_name] = df[selected_columns].mean(axis=1)
+                    st.success(f"✅ Aggregated score (Mean) created as `{new_column_name}`.")
                 elif aggregation_method == "Weighted Sum":
                     weights = {}
                     st.markdown("### ⚖️ **Assign Weights**")
@@ -134,12 +164,57 @@ def aggregate_scores(df):
                             format="%.2f"
                         )
                     weights_series = pd.Series(weights)
-                    df['Composite_Score'] = df[selected_columns].mul(weights_series).sum(axis=1)
-                    st.success("✅ Composite score (Weighted Sum) created successfully!")
-                st.write("### 📈 **Composite Score Statistics**")
-                st.write(df[['Composite_Score']].describe())
+                    new_column_name = "Composite_Score_Weighted_Sum"
+                    if new_column_name in df.columns:
+                        new_column_name += "_1"
+                    df[new_column_name] = df[selected_columns].mul(weights_series).sum(axis=1)
+                    st.success(f"✅ Aggregated score (Weighted Sum) created as `{new_column_name}`.")
             else:
                 st.warning("⚠️ Please select at least one column to aggregate.")
+            
+            # Variable Transformation
+            if transformation != "None":
+                if transformation == "Log Transformation":
+                    selected_transform = st.selectbox(
+                        "📌 **Select Column for Log Transformation**",
+                        numeric_columns
+                    )
+                    new_column_name = f"{selected_transform}_log"
+                    if new_column_name in df.columns:
+                        new_column_name += "_1"
+                    # Handle non-positive values
+                    if (df[selected_transform] <= 0).any():
+                        st.error(f"❌ Cannot apply log transformation on `{selected_transform}` with non-positive values.")
+                    else:
+                        df[new_column_name] = np.log(df[selected_transform])
+                        st.success(f"✅ Log transformation applied to `{selected_transform}` as `{new_column_name}`.")
+                elif transformation == "Square Root Transformation":
+                    selected_transform = st.selectbox(
+                        "📌 **Select Column for Square Root Transformation**",
+                        numeric_columns
+                    )
+                    new_column_name = f"{selected_transform}_sqrt"
+                    if new_column_name in df.columns:
+                        new_column_name += "_1"
+                    # Handle negative values
+                    if (df[selected_transform] < 0).any():
+                        st.error(f"❌ Cannot apply square root transformation on `{selected_transform}` with negative values.")
+                    else:
+                        df[new_column_name] = np.sqrt(df[selected_transform])
+                        st.success(f"✅ Square root transformation applied to `{selected_transform}` as `{new_column_name}`.")
+                elif transformation == "Custom Expression":
+                    if custom_expression.strip() == "":
+                        st.warning("⚠️ Please enter a valid custom expression.")
+                    else:
+                        try:
+                            # Execute the custom expression safely
+                            # Note: Using eval can be dangerous; ensure only trusted inputs are allowed
+                            exec(custom_expression, {'df': df, 'np': np, 'pd': pd})
+                            st.success("✅ Custom transformation applied successfully.")
+                        except Exception as e:
+                            st.error(f"❌ Error in custom transformation: {e}")
+            st.write("### 📈 **Updated Dataset Preview**")
+            st.dataframe(df.head())
     return df
 
 def plot_monovariate_distribution(df):
@@ -156,19 +231,29 @@ def plot_monovariate_distribution(df):
         return
     with st.form("monovariate_form"):
         selected_column = st.selectbox("🔍 **Select a Numerical Column to Visualize**", numeric_columns)
+        plot_type = st.selectbox("🔧 **Select Plot Type**", ["Histogram & KDE", "Box Plot", "Violin Plot"])
         submitted = st.form_submit_button("📈 **Generate Plot**")
         if submitted:
             if selected_column:
                 fig, ax = plt.subplots(figsize=(10, 6))
-                sns.histplot(df[selected_column].dropna(), kde=True, ax=ax, color='skyblue', edgecolor='black')
-                ax.set_title(f"📈 **Distribution of `{selected_column}`**", fontsize=16)
-                ax.set_xlabel(selected_column, fontsize=14)
-                ax.set_ylabel("Frequency", fontsize=14)
+                if plot_type == "Histogram & KDE":
+                    sns.histplot(df[selected_column].dropna(), kde=True, ax=ax, color='skyblue', edgecolor='black')
+                    ax.set_title(f"📈 **Distribution of `{selected_column}`**", fontsize=16)
+                    ax.set_xlabel(selected_column, fontsize=14)
+                    ax.set_ylabel("Frequency", fontsize=14)
+                elif plot_type == "Box Plot":
+                    sns.boxplot(y=df[selected_column], ax=ax, color='lightgreen')
+                    ax.set_title(f"📦 **Box Plot of `{selected_column}`**", fontsize=16)
+                    ax.set_ylabel(selected_column, fontsize=14)
+                elif plot_type == "Violin Plot":
+                    sns.violinplot(y=df[selected_column], ax=ax, color='lightcoral')
+                    ax.set_title(f"🎻 **Violin Plot of `{selected_column}`**", fontsize=16)
+                    ax.set_ylabel(selected_column, fontsize=14)
                 st.pyplot(fig)
 
 def plot_multivariate_distribution(df):
     """
-    Visualizes the distribution of multiple numerical variables using pair plots or scatter plots.
+    Visualizes the distribution of multiple numerical variables using pair plots, scatter plots, or correlation heatmaps.
 
     Args:
         df (pd.DataFrame): The dataset to visualize.
@@ -185,10 +270,10 @@ def plot_multivariate_distribution(df):
             default=numeric_columns[:2]
         )
         
-        if len(selected_columns) >= 2:
-            plot_type = st.selectbox("🔧 **Select Plot Type**", ["Pair Plot", "Scatter Plot"])
-            submitted = st.form_submit_button("📊 **Generate Plot**")
-            if submitted:
+        plot_type = st.selectbox("🔧 **Select Plot Type**", ["Pair Plot", "Scatter Plot", "Correlation Heatmap"])
+        submitted = st.form_submit_button("📊 **Generate Plot**")
+        if submitted:
+            if len(selected_columns) >= 2:
                 if plot_type == "Pair Plot":
                     with st.spinner("Generating Pair Plot..."):
                         fig = sns.pairplot(df[selected_columns].dropna())
@@ -236,8 +321,15 @@ def plot_multivariate_distribution(df):
                         )
                     ax.set_title(f"📉 **Scatter Plot of `{x_axis}` vs `{y_axis}`**", fontsize=16)
                     st.pyplot(fig)
-        else:
-            st.warning("⚠️ Please select at least two numerical columns for multivariate visualization.")
+                elif plot_type == "Correlation Heatmap":
+                    with st.spinner("Generating Correlation Heatmap..."):
+                        corr = df[selected_columns].corr()
+                        fig, ax = plt.subplots(figsize=(10, 8))
+                        sns.heatmap(corr, annot=True, cmap='coolwarm', ax=ax)
+                        ax.set_title("📈 **Correlation Heatmap**", fontsize=16)
+                        st.pyplot(fig)
+            else:
+                st.warning("⚠️ Please select at least two numerical columns for multivariate visualization.")
 
 def choose_statistical_test():
     """
@@ -406,6 +498,35 @@ def download_enhanced_dataset(df):
         mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     )
 
+def remove_columns(df):
+    """
+    Allows users to remove unwanted columns from the dataset.
+
+    Args:
+        df (pd.DataFrame): The dataset.
+
+    Returns:
+        pd.DataFrame: Dataset with selected columns removed.
+    """
+    st.header("🗑️ **Remove Columns**")
+    all_columns = df.columns.tolist()
+    with st.form("remove_columns_form"):
+        columns_to_remove = st.multiselect(
+            "🚮 **Select Columns to Remove**",
+            all_columns,
+            help="Select one or more columns to remove from the dataset."
+        )
+        submitted = st.form_submit_button("🗑️ **Remove Selected Columns**")
+        if submitted:
+            if columns_to_remove:
+                df = df.drop(columns=columns_to_remove)
+                st.success(f"✅ Removed columns: {', '.join(columns_to_remove)}")
+                st.write(f"**Updated Dataset Shape:** {df.shape}")
+                st.dataframe(df.head())
+            else:
+                st.warning("⚠️ Please select at least one column to remove.")
+    return df
+
 def main():
     """
     The main function that orchestrates the Streamlit application.
@@ -420,7 +541,8 @@ def main():
     Welcome to the **Outlier Detection and Analysis App**! This educational application allows you to:
     - 📥 **Upload** your dataset (CSV or Excel).
     - 🔍 **Filter** data based on custom conditions.
-    - 🧮 **Aggregate** scores from multiple numerical columns.
+    - 🧮 **Aggregate** scores from multiple numerical columns and perform variable transformations.
+    - 🗑️ **Remove** unwanted columns.
     - 📊 **Visualize** data distributions (monovariate and multivariate).
     - 🔎 **Detect** outliers using various statistical methods.
     - 💾 **Download** the enhanced dataset with outlier flags.
@@ -428,16 +550,18 @@ def main():
     **Instructions:**
     1. **Upload** your dataset using the upload section.
     2. **Filter** the data by entering your conditions in the filter section.
-    3. **Aggregate** scores if needed.
-    4. **Visualize** the data distributions.
-    5. **Choose** a statistical test to detect outliers.
-    6. **Detect** outliers and review the results.
-    7. **Download** the enhanced dataset with outlier information.
+    3. **Aggregate** scores and perform variable transformations if needed.
+    4. **Remove** any unwanted columns.
+    5. **Visualize** the data distributions.
+    6. **Choose** a statistical test to detect outliers.
+    7. **Detect** outliers and review the results.
+    8. **Download** the enhanced dataset with outlier information.
 
     **Educational Notes:**
     - **Outliers** are data points that deviate significantly from the majority of the data.
     - Detecting outliers is crucial as they can impact statistical analyses and machine learning models.
     - Different statistical methods are suitable for different data distributions and scenarios.
+    - **Variable Transformation:** Techniques like log transformation or square root transformation can help in normalizing data or stabilizing variance.
     """)
 
     # Step 1: Upload Dataset
@@ -448,27 +572,31 @@ def main():
         filtered_df = filter_cases(df)
         
         st.markdown("---")
-        # Step 3: Aggregate Scores
+        # Step 3: Aggregate Scores and Variable Transformation
         aggregated_df = aggregate_scores(filtered_df)
         
         st.markdown("---")
-        # Step 4: Visualizations
+        # Step 4: Remove Columns
+        cleaned_df = remove_columns(aggregated_df)
+        
+        st.markdown("---")
+        # Step 5: Data Visualization
         st.header("📊 **Data Visualization**")
         col1, col2 = st.columns(2)
         with col1:
-            plot_monovariate_distribution(aggregated_df)
+            plot_monovariate_distribution(cleaned_df)
         with col2:
-            plot_multivariate_distribution(aggregated_df)
+            plot_multivariate_distribution(cleaned_df)
         
         st.markdown("---")
-        # Step 5: Choose Statistical Test
+        # Step 6: Choose Statistical Test
         selected_test = choose_statistical_test()
         
-        # Step 6: Identify Outliers
-        outlier_df = identify_outliers(aggregated_df, selected_test)
+        # Step 7: Identify Outliers
+        outlier_df = identify_outliers(cleaned_df, selected_test)
         
         st.markdown("---")
-        # Step 7: Download Enhanced Dataset
+        # Step 8: Download Enhanced Dataset
         download_enhanced_dataset(outlier_df)
         
         st.markdown("---")
@@ -478,6 +606,9 @@ def main():
         
         st.subheader("📊 **Dataset Statistics**")
         st.write(outlier_df.describe())
+        
+        # Step 9: Add Footer
+        add_footer()
 
 if __name__ == "__main__":
     main()
