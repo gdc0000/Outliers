@@ -1,123 +1,145 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
-from scipy import stats
+import scipy.stats as stats
+import plotly.express as px
+import base64
+from sklearn.cluster import DBSCAN
 
-# Function to handle the upload of the dataset file
+# Function to upload dataset
 def upload_dataset():
-    uploaded_file = st.file_uploader("Upload your dataset", type=["csv", "xlsx"])
+    """
+    Allow users to upload a dataset.
+    Returns:
+        pandas.DataFrame: The uploaded dataset.
+    """
+    uploaded_file = st.file_uploader("Upload your dataset (CSV, Excel)", type=["csv", "xlsx"])
     if uploaded_file is not None:
         if uploaded_file.name.endswith('.csv'):
-            dataset = pd.read_csv(uploaded_file)
+            df = pd.read_csv(uploaded_file)
         else:
-            dataset = pd.read_excel(uploaded_file)
-        return dataset
+            df = pd.read_excel(uploaded_file)
+        return df
     return None
 
-# Function to filter instances based on user-defined criteria
-def filter_cases(dataset, criteria):
-    filtered_dataset = dataset.query(criteria)
-    return filtered_dataset
+# Function to filter cases
+def filter_cases(df):
+    """
+    Filter instances (cases) based on user-defined criteria.
+    Args:
+        df (pandas.DataFrame): The dataset to filter.
+    Returns:
+        pandas.DataFrame: The filtered dataset.
+    """
+    st.sidebar.header("Filter Cases")
+    filter_column = st.sidebar.selectbox("Select a column to filter", df.columns)
+    filter_value = st.sidebar.text_input(f"Enter value to filter {filter_column}")
+    if filter_value:
+        try:
+            df = df[df[filter_column] == filter_value]
+        except:
+            st.error("Invalid filter value")
+    return df
 
-# Function to create scores by aggregating specified columns
-def aggregate_scores(dataset, columns):
-    dataset['score'] = dataset[columns].sum(axis=1)
-    return dataset
+# Function to aggregate scores
+def aggregate_scores(df):
+    """
+    Enable users to create scores by aggregating columns (variables).
+    Args:
+        df (pandas.DataFrame): The dataset to aggregate.
+    Returns:
+        pandas.DataFrame: The dataset with aggregated scores.
+    """
+    st.sidebar.header("Aggregate Scores")
+    selected_columns = st.sidebar.multiselect("Select columns to aggregate", df.columns)
+    if selected_columns:
+        score_name = st.sidebar.text_input("Enter a name for the aggregated score")
+        if score_name:
+            df[score_name] = df[selected_columns].mean(axis=1)  # Example aggregation: mean
+    return df
 
-# Function to visualize the distribution of a single variable
-def visualize_monovariate(dataset, column):
-    plt.figure(figsize=(10, 6))
-    sns.histplot(dataset[column], kde=True)
-    st.pyplot(plt)
+# Function to visualize monovariate distribution
+def visualize_monovariate_distribution(df):
+    """
+    Visualize the distribution of individual variables.
+    Args:
+        df (pandas.DataFrame): The dataset to visualize.
+    """
+    st.header("Monovariate Distribution")
+    column = st.selectbox("Select a column to visualize", df.columns)
+    if column:
+        fig = px.histogram(df, x=column, nbins=30, title=f"Distribution of {column}")
+        st.plotly_chart(fig)
 
-# Function to visualize the distribution of multiple variables
-def visualize_multivariate(dataset, columns):
-    plt.figure(figsize=(10, 6))
-    sns.pairplot(dataset[columns])
-    st.pyplot(plt)
+# Function to visualize multivariate distribution
+def visualize_multivariate_distribution(df):
+    """
+    Visualize the distribution of multiple variables.
+    Args:
+        df (pandas.DataFrame): The dataset to visualize.
+    """
+    st.header("Multivariate Distribution")
+    selected_columns = st.multiselect("Select columns to visualize", df.columns)
+    if selected_columns:
+        fig = px.scatter_matrix(df, dimensions=selected_columns, title="Scatter Matrix")
+        st.plotly_chart(fig)
 
-# Function to allow users to choose and apply a statistical test for outlier detection
-def choose_statistical_test(dataset, test_type):
-    if test_type == 'Z-Score':
-        z_scores = np.abs(stats.zscore(dataset.select_dtypes(include=[np.number])))
-        outliers = (z_scores > 3).any(axis=1)
-    elif test_type == 'IQR':
-        Q1 = dataset.select_dtypes(include=[np.number]).quantile(0.25)
-        Q3 = dataset.select_dtypes(include=[np.number]).quantile(0.75)
-        IQR = Q3 - Q1
-        outliers = ((dataset.select_dtypes(include=[np.number]) < (Q1 - 1.5 * IQR)) | (dataset.select_dtypes(include=[np.number]) > (Q3 + 1.5 * IQR))).any(axis=1)
-    else:
-        st.error("Unsupported test type")
-        return None
-    return outliers
+# Function to select statistical test
+def select_statistical_test():
+    """
+    Allow users to choose the best statistical test to detect outliers.
+    Returns:
+        str: The selected statistical test.
+    """
+    st.sidebar.header("Statistical Tests")
+    test = st.sidebar.selectbox("Select a statistical test", ["Z-Score", "IQR", "DBSCAN"])
+    return test
 
-# Function to identify outliers based on the results of the statistical test
-def identify_outliers(dataset, outliers):
-    dataset['outlier'] = outliers
-    return dataset
+# Function to identify outliers
+def identify_outliers(df, test):
+    """
+    Identify outliers based on the chosen statistical test.
+    Args:
+        df (pandas.DataFrame): The dataset to analyze.
+        test (str): The selected statistical test.
+    Returns:
+        pandas.DataFrame: The dataset with an 'outlier' column.
+    """
+    if test == "Z-Score":
+        z_scores = np.abs(stats.zscore(df.select_dtypes(include=[np.number])))
+        df['outlier'] = (z_scores > 3).any(axis=1)
+    elif test == "IQR":
+        q1 = df.select_dtypes(include=[np.number]).quantile(0.25)
+        q3 = df.select_dtypes(include=[np.number]).quantile(0.75)
+        iqr = q3 - q1
+        df['outlier'] = ((df.select_dtypes(include=[np.number]) < (q1 - 1.5 * iqr)) | (df.select_dtypes(include=[np.number]) > (q3 + 1.5 * iqr))).any(axis=1)
+    elif test == "DBSCAN":
+        dbscan = DBSCAN(eps=0.5, min_samples=5)
+        df['outlier'] = dbscan.fit_predict(df.select_dtypes(include=[np.number])) == -1
+    return df
 
-# Function to provide an option for users to download the dataset enhanced with a filter variable to select/deselect outliers
-def download_enhanced_dataset(dataset):
-    st.download_button(
-        label="Download enhanced dataset as CSV",
-        data=dataset.to_csv(index=False),
-        file_name='enhanced_dataset.csv',
-        mime='text/csv',
-    )
+# Function to download enhanced dataset
+def download_enhanced_dataset(df):
+    """
+    Provide an option for users to download the dataset enhanced with a filter variable to select/deselect outliers.
+    Args:
+        df (pandas.DataFrame): The dataset to download.
+    """
+    st.header("Download Enhanced Dataset")
+    csv = df.to_csv(index=False)
+    b64 = base64.b64encode(csv.encode()).decode()  # some strings <-> bytes conversions necessary here
+    href = f'<a href="data:file/csv;base64,{b64}" download="enhanced_dataset.csv">Download CSV File</a>'
+    st.markdown(href, unsafe_allow_html=True)
 
-# Streamlit app
+# Main function
 def main():
-    st.title("Outlier Detection App")
-
-    # Upload dataset
-    dataset = upload_dataset()
-    if dataset is not None:
-        st.write("Dataset uploaded successfully")
-        st.dataframe(dataset.head())
-
-        # Filter cases
-        st.sidebar.header("Filter Cases")
-        criteria = st.sidebar.text_input("Enter filter criteria (e.g., 'column_name > value')")
-        if criteria:
-            dataset = filter_cases(dataset, criteria)
-            st.write("Filtered dataset")
-            st.dataframe(dataset.head())
-
-        # Aggregate scores
-        st.sidebar.header("Aggregate Scores")
-        columns_to_aggregate = st.sidebar.multiselect("Select columns to aggregate", dataset.columns)
-        if columns_to_aggregate:
-            dataset = aggregate_scores(dataset, columns_to_aggregate)
-            st.write("Dataset with aggregated scores")
-            st.dataframe(dataset.head())
-
-        # Visualize monovariate distribution
-        st.sidebar.header("Monovariate Distribution")
-        column_to_visualize = st.sidebar.selectbox("Select column to visualize", dataset.columns)
-        if column_to_visualize:
-            visualize_monovariate(dataset, column_to_visualize)
-
-        # Visualize multivariate distribution
-        st.sidebar.header("Multivariate Distribution")
-        columns_to_visualize = st.sidebar.multiselect("Select columns to visualize", dataset.columns)
-        if columns_to_visualize:
-            visualize_multivariate(dataset, columns_to_visualize)
-
-        # Choose statistical test
-        st.sidebar.header("Statistical Test for Outlier Detection")
-        test_type = st.sidebar.selectbox("Select test type", ['Z-Score', 'IQR'])
-        if test_type:
-            outliers = choose_statistical_test(dataset, test_type)
-            if outliers is not None:
-                dataset = identify_outliers(dataset, outliers)
-                st.write("Dataset with identified outliers")
-                st.dataframe(dataset.head())
-
-        # Download enhanced dataset
-        st.sidebar.header("Download Enhanced Dataset")
-        download_enhanced_dataset(dataset)
-
-if __name__ == "__main__":
-    main()
+    st.title("Outlier Detection Application")
+    df = upload_dataset()
+    if df is not None:
+        df = filter_cases(df)
+        df = aggregate_scores(df)
+        test = select_statistical_test()
+        df = identify_outliers(df, test)
+        visualize_monovariate_distribution(df)
+        visualize_multivariate_distribution(df)
+        download_enhanced_dataset(df)
