@@ -19,23 +19,24 @@ def upload_dataset():
     Returns:
         pd.DataFrame: The uploaded dataset as a pandas DataFrame.
     """
-    uploaded_file = st.file_uploader("Upload your dataset", type=["csv", "xlsx", "xls"])
+    uploaded_file = st.file_uploader("📥 Upload your dataset", type=["csv", "xlsx", "xls"])
     if uploaded_file is not None:
         try:
             if uploaded_file.name.endswith('.csv'):
                 df = pd.read_csv(uploaded_file)
             else:
                 df = pd.read_excel(uploaded_file)
-            st.success("Dataset uploaded successfully!")
-            st.write(f"Dataset Shape: {df.shape}")
+            st.success("✅ Dataset uploaded successfully!")
+            st.write(f"**Dataset Shape:** {df.shape}")
+            st.dataframe(df.head())
             return df
         except Exception as e:
-            st.error(f"Error loading dataset: {e}")
+            st.error(f"❌ Error loading dataset: {e}")
     return None
 
 def filter_cases(df):
     """
-    Provides functionality to filter instances (rows) based on user-defined criteria.
+    Provides functionality to filter instances (rows) based on user-defined conditions.
 
     Args:
         df (pd.DataFrame): The original dataset.
@@ -43,28 +44,45 @@ def filter_cases(df):
     Returns:
         pd.DataFrame: The filtered dataset.
     """
-    st.sidebar.header("Filter Cases")
-    filtered_df = df.copy()
-    for column in df.select_dtypes(include=['number', 'object', 'category']).columns:
-        if df[column].dtype == 'object' or df[column].dtype.name == 'category':
-            options = df[column].dropna().unique().tolist()
-            selected = st.sidebar.multiselect(f"Select {column}", options, default=options)
-            if selected:
-                filtered_df = filtered_df[filtered_df[column].isin(selected)]
-        else:
-            min_val = float(df[column].min())
-            max_val = float(df[column].max())
-            step = (max_val - min_val) / 100 if (max_val - min_val) != 0 else 1
-            selected_range = st.sidebar.slider(
-                f"Select range for {column}",
-                min_val, max_val, (min_val, max_val), step=step
-            )
-            filtered_df = filtered_df[
-                (filtered_df[column] >= selected_range[0]) & 
-                (filtered_df[column] <= selected_range[1])
-            ]
-    st.write(f"Number of records after filtering: {filtered_df.shape[0]}")
-    return filtered_df
+    st.sidebar.header("🔍 Filter Cases")
+
+    st.sidebar.markdown("""
+    ### Apply Filter Conditions
+    Enter your filter conditions using pandas query syntax.
+    - Use logical operators: `and`, `or`, `not`
+    - Use comparison operators: `>`, `<`, `>=`, `<=`, `==`, `!=`
+    - Enclose string values in quotes: `'value'` or `"value"`
+    
+    **Examples:**
+    - `AGE > 30`
+    - `INCOME < 50000 and AGE >= 25`
+    - `CITY == 'New York' or CITY == 'Los Angeles'`
+    """)
+
+    filter_condition = st.sidebar.text_area(
+        "📋 Enter Filter Conditions",
+        height=150,
+        placeholder="e.g., AGE > 30 and INCOME < 50000"
+    )
+
+    if st.sidebar.button("Apply Filter"):
+        if filter_condition.strip() == "":
+            st.warning("⚠️ Please enter at least one filter condition.")
+            return df
+        try:
+            # Use query to filter the dataframe
+            filtered_df = df.query(filter_condition, engine='python')
+            st.success("✅ Filter applied successfully!")
+            st.write(f"**Number of records after filtering:** {filtered_df.shape[0]}")
+            st.dataframe(filtered_df.head())
+            return filtered_df
+        except Exception as e:
+            st.error(f"❌ Error applying filter: {e}")
+            st.info("🔍 Ensure your filter conditions are valid and match the dataset's column names and data types.")
+            return df
+    else:
+        st.write(f"**Number of records after filtering:** {df.shape[0]}")
+        return df
 
 def aggregate_scores(df):
     """
@@ -76,37 +94,46 @@ def aggregate_scores(df):
     Returns:
         pd.DataFrame: Dataset with an additional 'Composite_Score' column.
     """
-    st.sidebar.header("Score Aggregation")
+    st.sidebar.header("🧮 Score Aggregation")
     numeric_columns = df.select_dtypes(include=['number']).columns.tolist()
+    if not numeric_columns:
+        st.sidebar.warning("⚠️ No numerical columns available for aggregation.")
+        return df
+
     selected_columns = st.sidebar.multiselect(
-        "Select columns to aggregate into a score", 
+        "📊 Select columns to aggregate into a score", 
         numeric_columns,
         default=numeric_columns[:2]  # Default selection
     )
     
     if selected_columns:
         aggregation_method = st.sidebar.selectbox(
-            "Select aggregation method", 
+            "🔧 Select aggregation method", 
             ["Sum", "Mean", "Weighted Sum"]
         )
         if aggregation_method == "Sum":
             df['Composite_Score'] = df[selected_columns].sum(axis=1)
+            st.sidebar.success("✅ Composite score (Sum) created successfully!")
         elif aggregation_method == "Mean":
             df['Composite_Score'] = df[selected_columns].mean(axis=1)
+            st.sidebar.success("✅ Composite score (Mean) created successfully!")
         elif aggregation_method == "Weighted Sum":
             weights = {}
-            st.sidebar.write("### Assign Weights")
+            st.sidebar.markdown("### ⚖️ Assign Weights")
             for col in selected_columns:
                 weights[col] = st.sidebar.number_input(
-                    f"Weight for {col}", 
+                    f"Weight for `{col}`", 
                     value=1.0, 
-                    step=0.1
+                    step=0.1,
+                    format="%.2f"
                 )
             weights_series = pd.Series(weights)
             df['Composite_Score'] = df[selected_columns].mul(weights_series).sum(axis=1)
-        st.success("Composite score created successfully!")
+            st.sidebar.success("✅ Composite score (Weighted Sum) created successfully!")
+        st.write("### 📈 Composite Score")
+        st.write(df[['Composite_Score']].describe())
     else:
-        st.warning("Please select at least one column to aggregate.")
+        st.sidebar.warning("⚠️ Please select at least one column to aggregate.")
     return df
 
 def plot_monovariate_distribution(df):
@@ -116,17 +143,17 @@ def plot_monovariate_distribution(df):
     Args:
         df (pd.DataFrame): The dataset to visualize.
     """
-    st.header("Monovariate Distribution")
+    st.header("📊 Monovariate Distribution")
     numeric_columns = df.select_dtypes(include=['number']).columns.tolist()
     if not numeric_columns:
-        st.warning("No numerical columns available for visualization.")
+        st.warning("⚠️ No numerical columns available for visualization.")
         return
     selected_column = st.selectbox("Select a numerical column to visualize", numeric_columns)
     
     if selected_column:
         fig, ax = plt.subplots(figsize=(10, 6))
         sns.histplot(df[selected_column].dropna(), kde=True, ax=ax, color='skyblue', edgecolor='black')
-        ax.set_title(f"Distribution of {selected_column}", fontsize=16)
+        ax.set_title(f"Distribution of `{selected_column}`", fontsize=16)
         ax.set_xlabel(selected_column, fontsize=14)
         ax.set_ylabel("Frequency", fontsize=14)
         st.pyplot(fig)
@@ -138,32 +165,41 @@ def plot_multivariate_distribution(df):
     Args:
         df (pd.DataFrame): The dataset to visualize.
     """
-    st.header("Multivariate Distribution")
+    st.header("📈 Multivariate Distribution")
     numeric_columns = df.select_dtypes(include=['number']).columns.tolist()
     if len(numeric_columns) < 2:
-        st.warning("At least two numerical columns are required for multivariate visualization.")
+        st.warning("⚠️ At least two numerical columns are required for multivariate visualization.")
         return
     selected_columns = st.multiselect(
-        "Select numerical columns to visualize", 
+        "🔍 Select numerical columns to visualize", 
         numeric_columns, 
         default=numeric_columns[:2]
     )
     
     if len(selected_columns) >= 2:
-        plot_type = st.selectbox("Select plot type", ["Pair Plot", "Scatter Plot"])
+        plot_type = st.selectbox("🔧 Select plot type", ["Pair Plot", "Scatter Plot"])
         if plot_type == "Pair Plot":
             fig = sns.pairplot(df[selected_columns].dropna())
             st.pyplot(fig)
         elif plot_type == "Scatter Plot":
-            x_axis = st.selectbox("X-axis", selected_columns, index=0)
-            y_axis = st.selectbox("Y-axis", selected_columns, index=1)
-            if x_axis and y_axis:
-                fig, ax = plt.subplots(figsize=(10, 6))
-                sns.scatterplot(data=df, x=x_axis, y=y_axis, ax=ax, hue='Outlier' if 'Outlier' in df.columns else None, palette={True: 'red', False: 'blue'})
-                ax.set_title(f"Scatter Plot of {x_axis} vs {y_axis}", fontsize=16)
-                st.pyplot(fig)
+            x_axis = st.selectbox("📍 X-axis", selected_columns, index=0)
+            y_axis = st.selectbox("📍 Y-axis", selected_columns, index=1)
+            hue_option = None
+            if 'Outlier' in df.columns:
+                hue_option = 'Outlier'
+            fig, ax = plt.subplots(figsize=(10, 6))
+            sns.scatterplot(
+                data=df, 
+                x=x_axis, 
+                y=y_axis, 
+                hue=hue_option,
+                palette={True: 'red', False: 'blue'} if hue_option else 'viridis',
+                ax=ax
+            )
+            ax.set_title(f"Scatter Plot of `{x_axis}` vs `{y_axis}`", fontsize=16)
+            st.pyplot(fig)
     else:
-        st.warning("Please select at least two numerical columns for multivariate visualization.")
+        st.warning("⚠️ Please select at least two numerical columns for multivariate visualization.")
 
 def choose_statistical_test():
     """
@@ -172,9 +208,9 @@ def choose_statistical_test():
     Returns:
         str: The name of the selected statistical test.
     """
-    st.sidebar.header("Outlier Detection")
+    st.sidebar.header("🔍 Outlier Detection")
     test = st.sidebar.selectbox(
-        "Select a statistical test to detect outliers", 
+        "🛠️ Select a statistical test to detect outliers", 
         ["Z-Score", "IQR", "DBSCAN", "Isolation Forest"]
     )
     return test
@@ -190,24 +226,24 @@ def identify_outliers(df, test):
     Returns:
         pd.DataFrame: Dataset with an additional 'Outlier' column indicating outliers.
     """
-    st.header("Outlier Identification")
+    st.header("🔎 Outlier Identification")
     numeric_columns = df.select_dtypes(include=['number']).columns.tolist()
     if not numeric_columns:
-        st.warning("No numerical columns available for outlier detection.")
+        st.warning("⚠️ No numerical columns available for outlier detection.")
         return df
     selected_columns = st.multiselect(
-        "Select numerical columns for outlier detection", 
+        "📋 Select numerical columns for outlier detection", 
         numeric_columns, 
         default=numeric_columns[:2]
     )
     
     if selected_columns:
         if test == "Z-Score":
-            threshold = st.sidebar.number_input("Z-Score Threshold", value=3.0, step=0.1)
+            threshold = st.sidebar.number_input("🔢 Z-Score Threshold", value=3.0, step=0.1)
             z_scores = np.abs(stats.zscore(df[selected_columns].dropna()))
             outliers = (z_scores > threshold).any(axis=1)
         elif test == "IQR":
-            multiplier = st.sidebar.number_input("IQR Multiplier", value=1.5, step=0.1)
+            multiplier = st.sidebar.number_input("📏 IQR Multiplier", value=1.5, step=0.1)
             Q1 = df[selected_columns].quantile(0.25)
             Q3 = df[selected_columns].quantile(0.75)
             IQR = Q3 - Q1
@@ -215,8 +251,8 @@ def identify_outliers(df, test):
             upper_bound = Q3 + multiplier * IQR
             outliers = ((df[selected_columns] < lower_bound) | (df[selected_columns] > upper_bound)).any(axis=1)
         elif test == "DBSCAN":
-            eps = st.sidebar.number_input("DBSCAN eps", value=0.5, step=0.1)
-            min_samples = st.sidebar.number_input("DBSCAN min_samples", value=5, step=1)
+            eps = st.sidebar.number_input("🔧 DBSCAN eps", value=0.5, step=0.1)
+            min_samples = st.sidebar.number_input("🔧 DBSCAN min_samples", value=5, step=1)
             scaler = StandardScaler()
             scaled_data = scaler.fit_transform(df[selected_columns].dropna())
             db = DBSCAN(eps=eps, min_samples=min_samples)
@@ -229,7 +265,7 @@ def identify_outliers(df, test):
             outliers = outliers_series
         elif test == "Isolation Forest":
             contamination = st.sidebar.number_input(
-                "Isolation Forest Contamination", 
+                "🧮 Isolation Forest Contamination",
                 value=0.05, 
                 min_value=0.0, 
                 max_value=0.5, 
@@ -247,14 +283,14 @@ def identify_outliers(df, test):
         # Add the 'Outlier' column
         df['Outlier'] = outliers
         num_outliers = df['Outlier'].sum()
-        st.write(f"Number of outliers detected: {num_outliers}")
+        st.write(f"**Number of outliers detected:** {num_outliers}")
         
         # Optionally, display some statistics or a table of outliers
         if num_outliers > 0:
-            st.subheader("Outlier Records")
+            st.subheader("📋 Outlier Records")
             st.write(df[df['Outlier']])
     else:
-        st.warning("Please select at least one numerical column for outlier detection.")
+        st.warning("⚠️ Please select at least one numerical column for outlier detection.")
     return df
 
 def download_enhanced_dataset(df):
@@ -264,7 +300,7 @@ def download_enhanced_dataset(df):
     Args:
         df (pd.DataFrame): The enhanced dataset.
     """
-    st.header("Download Enhanced Dataset")
+    st.header("💾 Download Enhanced Dataset")
     def to_excel(df):
         output = BytesIO()
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
@@ -275,7 +311,7 @@ def download_enhanced_dataset(df):
 
     excel_data = to_excel(df)
     st.download_button(
-        label="Download dataset with Outlier Flags",
+        label="📥 Download dataset with Outlier Flags",
         data=excel_data,
         file_name='enhanced_dataset.xlsx',
         mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
@@ -286,17 +322,29 @@ def main():
     The main function that orchestrates the Streamlit application.
     """
     st.set_page_config(
-        page_title="Outlier Detection and Analysis App",
+        page_title="📊 Outlier Detection and Analysis App",
         layout="wide",
         initial_sidebar_state="expanded"
     )
-    st.title("📊 Outlier Detection and Analysis App")
+    st.title("📈 Outlier Detection and Analysis App")
     st.markdown("""
-    This application allows you to upload a dataset, filter the data based on your criteria, 
-    create composite scores, visualize distributions, perform outlier detection using various statistical tests, 
-    and download the enhanced dataset with outlier flags.
-    """)
+    Welcome to the **Outlier Detection and Analysis App**! This application allows you to:
+    - 📥 **Upload** your dataset (CSV or Excel).
+    - 🔍 **Filter** data based on custom conditions.
+    - 🧮 **Aggregate** scores from multiple numerical columns.
+    - 📊 **Visualize** data distributions (monovariate and multivariate).
+    - 🔎 **Detect** outliers using various statistical methods.
+    - 💾 **Download** the enhanced dataset with outlier flags.
     
+    **Instructions:**
+    1. **Upload** your dataset using the upload button.
+    2. **Filter** the data by entering your conditions in the sidebar.
+    3. **Aggregate** scores if needed.
+    4. **Visualize** the data distributions.
+    5. **Choose** a statistical test to detect outliers.
+    6. **Download** the enhanced dataset with outlier information.
+    """)
+
     # Step 1: Upload Dataset
     df = upload_dataset()
     if df is not None:
@@ -323,11 +371,11 @@ def main():
         download_enhanced_dataset(outlier_df)
         
         # Optional: Display the enhanced dataset
-        st.header("Enhanced Dataset")
+        st.header("📂 Enhanced Dataset")
         st.dataframe(outlier_df)
-        
-        # Optionally, provide a summary or statistics
-        st.subheader("Dataset Statistics")
+
+        # Optional: Provide summary statistics
+        st.subheader("📊 Dataset Statistics")
         st.write(outlier_df.describe())
 
 if __name__ == "__main__":
