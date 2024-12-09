@@ -186,16 +186,42 @@ def plot_multivariate_distribution(df):
             y_axis = st.selectbox("📍 Y-axis", selected_columns, index=1)
             hue_option = None
             if 'Outlier' in df.columns:
+                # Ensure 'Outlier' is boolean and has no NaNs
+                df['Outlier'] = df['Outlier'].fillna(False).astype(bool)
                 hue_option = 'Outlier'
             fig, ax = plt.subplots(figsize=(10, 6))
-            sns.scatterplot(
-                data=df, 
-                x=x_axis, 
-                y=y_axis, 
-                hue=hue_option,
-                palette={True: 'red', False: 'blue'} if hue_option else 'viridis',
-                ax=ax
-            )
+            if hue_option:
+                # Check if 'Outlier' column has more than one unique value to avoid warning
+                if df[hue_option].nunique() > 1:
+                    sns.scatterplot(
+                        data=df, 
+                        x=x_axis, 
+                        y=y_axis, 
+                        hue=hue_option,
+                        palette={True: 'red', False: 'blue'},
+                        ax=ax,
+                        alpha=0.7
+                    )
+                else:
+                    # If 'Outlier' has only one unique value, skip hue
+                    sns.scatterplot(
+                        data=df, 
+                        x=x_axis, 
+                        y=y_axis, 
+                        ax=ax,
+                        color='blue',
+                        alpha=0.7
+                    )
+                    st.warning("⚠️ 'Outlier' column has only one unique value. Hue parameter is ignored.")
+            else:
+                sns.scatterplot(
+                    data=df, 
+                    x=x_axis, 
+                    y=y_axis, 
+                    ax=ax,
+                    color='blue',
+                    alpha=0.7
+                )
             ax.set_title(f"Scatter Plot of `{x_axis}` vs `{y_axis}`", fontsize=16)
             st.pyplot(fig)
     else:
@@ -240,8 +266,12 @@ def identify_outliers(df, test):
     if selected_columns:
         if test == "Z-Score":
             threshold = st.sidebar.number_input("🔢 Z-Score Threshold", value=3.0, step=0.1)
-            z_scores = np.abs(stats.zscore(df[selected_columns].dropna()))
-            outliers = (z_scores > threshold).any(axis=1)
+            # Calculate z-scores
+            z_scores = df[selected_columns].apply(lambda x: np.abs(stats.zscore(x, nan_policy='omit')))
+            # Identify outliers
+            outliers = z_scores > threshold
+            # Any row with any outlier in selected columns
+            outlier_mask = outliers.any(axis=1)
         elif test == "IQR":
             multiplier = st.sidebar.number_input("📏 IQR Multiplier", value=1.5, step=0.1)
             Q1 = df[selected_columns].quantile(0.25)
@@ -249,7 +279,10 @@ def identify_outliers(df, test):
             IQR = Q3 - Q1
             lower_bound = Q1 - multiplier * IQR
             upper_bound = Q3 + multiplier * IQR
-            outliers = ((df[selected_columns] < lower_bound) | (df[selected_columns] > upper_bound)).any(axis=1)
+            # Identify outliers
+            outliers = (df[selected_columns] < lower_bound) | (df[selected_columns] > upper_bound)
+            # Any row with any outlier in selected columns
+            outlier_mask = outliers.any(axis=1)
         elif test == "DBSCAN":
             eps = st.sidebar.number_input("🔧 DBSCAN eps", value=0.5, step=0.1)
             min_samples = st.sidebar.number_input("🔧 DBSCAN min_samples", value=5, step=1)
@@ -260,8 +293,9 @@ def identify_outliers(df, test):
             labels = db.labels_
             outliers_detected = labels == -1
             # Initialize a Series with all False
-            outliers = pd.Series(False, index=df.index)
-            outliers.loc[df[selected_columns].dropna().index] = outliers_detected
+            outlier_mask = pd.Series(False, index=df.index)
+            # Assign outlier status to the corresponding indices
+            outlier_mask.loc[df[selected_columns].dropna().index] = outliers_detected
         elif test == "Isolation Forest":
             contamination = st.sidebar.number_input(
                 "🧮 Isolation Forest Contamination",
@@ -271,15 +305,17 @@ def identify_outliers(df, test):
                 step=0.01
             )
             iso_forest = IsolationForest(contamination=contamination, random_state=42)
+            # Fit the model
             iso_forest.fit(df[selected_columns].dropna())
             preds = iso_forest.predict(df[selected_columns].dropna())
             outliers_detected = preds == -1
             # Initialize a Series with all False
-            outliers = pd.Series(False, index=df.index)
-            outliers.loc[df[selected_columns].dropna().index] = outliers_detected
+            outlier_mask = pd.Series(False, index=df.index)
+            # Assign outlier status to the corresponding indices
+            outlier_mask.loc[df[selected_columns].dropna().index] = outliers_detected
 
         # Add the 'Outlier' column
-        df['Outlier'] = outliers
+        df['Outlier'] = outlier_mask.fillna(False).astype(bool)
         num_outliers = df['Outlier'].sum()
         st.write(f"**Number of outliers detected:** {num_outliers}")
         
