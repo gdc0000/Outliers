@@ -1,5 +1,9 @@
 # Outlier Detection and Analysis App
 
+[![Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://outlier-detection.streamlit.app)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.9+](https://img.shields.io/badge/Python-3.9%2B-blue.svg)](https://www.python.org/)
+
 The **Outlier Detection and Analysis App** is an interactive, educational tool built with Streamlit for data analysts and researchers. This application allows you to:
 
 - **Upload** your dataset (CSV or Excel) and preview its contents.
